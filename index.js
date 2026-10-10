@@ -1,66 +1,40 @@
-globalThis.crypto = require('crypto')
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
-const qrcode = require('qrcode-terminal')
-const fs = require('fs')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 
-async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info')
-
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
-        browser: ['Chrome', 'Chrome', '1.0']
-    })
+        printQRInTerminal: false, // QR කෝඩ් එක ටර්මෙක්ස් එකේ පෙන්වීම අක්‍රීය කරයි
+        logger: pino({ level: 'silent' })
+    });
 
-    sock.ev.on('creds.update', saveCreds)
+    // ඔබගේ දුරකථන අංකය මඟින් සම්බන්ධ වීම සඳහා (Pairing Code)
+    if (!sock.authState.creds.registered) {
+        // මෙහි ඔබේ WhatsApp අංකය රටේ කේතය සමඟ (උදාහරණයක් ලෙස 9477xxxxxxx) ඇතුළත් කරන්න
+        const phoneNumber = await question("ඔබේ WhatsApp අංකය ඇතුළත් කරන්න (උදා: 9477xxxxxxx): ");
+        
+        setTimeout(async () => {
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log(`\n🔑 ඔබේ Pairing Code එක මෙයයි: \x1b[32m${code}\x1b[0m\n`);
+            console.log("ඔබගේ WhatsApp -> Linked Devices -> Link with phone number වෙත ගොස් මෙම කේතය ඇතුළත් කරන්න.");
+        }, 3000);
+    }
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update
-
-        if (qr) {
-            console.log('--- SCAN THIS QR IN WHATSAPP ---')
-            qrcode.generate(qr, { small: true })
-        }
-
+    sock.io.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode
-            const reason = lastDisconnect?.error?.output?.payload?.message || lastDisconnect?.error?.message
-            console.log('Closed, status:', statusCode, 'Reason:', reason)
-
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-                console.log('Logged out, deleting auth...')
-                if (fs.existsSync('auth_info')) {
-                    fs.rmSync('auth_info', { recursive: true, force: true })
-                }
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                connectToWhatsApp();
             }
-            // 5 sec passe restart
-            setTimeout(() => startBot(), 3000)
         } else if (connection === 'open') {
-            console.log('✅ WhatsApp Connected!')
+            console.log('✅ WhatsApp බොට් එක සාර්ථකව සම්බන්ධ විය!');
         }
-    })
+    });
 
-    // --- GROUP ADD BLOCK LOGIC ---
-    sock.ev.on('group-participants.update', async (anu) => {
-        try {
-            if (anu.action == 'add') {
-                let groupId = anu.id
-                let newMembers = anu.participants
-                console.log(`New members in ${groupId}:`, newMembers)
-
-                for (let member of newMembers) {
-                    // bot wama add unoth remove karanna epa
-                    if (member === sock.user.id.split(':')[0] + '@s.whatsapp.net') continue
-
-                    await new Promise(r => setTimeout(r, 2000))
-                    await sock.groupParticipantsUpdate(groupId, [member], "remove")
-                    console.log(`✅ Removed ${member} from ${groupId}`)
-                }
-            }
-        } catch (e) { 
-            console.log('Remove error:', e.message) 
-        }
-    })
+    sock.ev.on('creds.update', saveCreds);
 }
 
-startBot()
+connectToWhatsApp();

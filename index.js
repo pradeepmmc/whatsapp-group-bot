@@ -2,7 +2,6 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const pino = require('pino');
 const { GoogleGenAI } = require('@google/genai');
 
-// නිවැරදි ක්‍රමයට API Key එක සැකසීම
 const ai = new GoogleGenAI({ apiKey: "AIzaSyDosD4hUD1Mbjz4Y1zl38ehDNvMfBN64VQ" });
 
 const TARGET_PHONE_NUMBER = "94767181514";
@@ -13,9 +12,16 @@ async function askGemini(promptText) {
             model: 'gemini-1.5-flash',
             contents: promptText,
         });
-        return response.text;
+        
+        // Response එකෙන් නිවැරදි පෙළ (Text) ලබා ගැනීම
+        if (response && response.text) {
+            return response.text;
+        } else if (response && response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+            return response.candidates[0].content.parts[0].text;
+        }
+        return "ප්‍රතිචාරයක් ලැබුණේ නැත.";
     } catch (error) {
-        console.error("Gemini API Error:", error);
+        console.error("Gemini API Detailed Error:", error);
         return "සමාවෙන්න, මට මේ මොහොතේ පිළිතුරු දීමට නොහැකි විය.";
     }
 }

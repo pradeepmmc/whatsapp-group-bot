@@ -2,11 +2,9 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const pino = require('pino');
 const { GoogleGenAI } = require('@google/genai');
 
-// Google Gemini AI වින්‍යාසය (ඔබගේ API Key එක මෙහි ඇතුළත් කර ඇත)
-const GEMINI_API_KEY = "AIzaSyDosD4hUD1Mbjz4Y1zl38ehDNvMfBN64VQ";
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+// නිවැරදි ක්‍රමයට API Key එක සැකසීම
+const ai = new GoogleGenAI({ apiKey: "AIzaSyDosD4hUD1Mbjz4Y1zl38ehDNvMfBN64VQ" });
 
-// බොට් එක සම්බන්ධ කිරීමට භාවිත කරන දුරකථන අංකය
 const TARGET_PHONE_NUMBER = "94767181514";
 
 async function askGemini(promptText) {
@@ -31,7 +29,6 @@ async function connectToWhatsApp() {
         logger: pino({ level: 'silent' })
     });
 
-    // Pairing Code මඟින් සම්බන්ධ වීම (QR කෝඩ් ස්කෑන් කිරීම අවශ්‍ය නැත)
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -39,7 +36,7 @@ async function connectToWhatsApp() {
                 console.log(`\n🔑 ඔබගේ WhatsApp Pairing Code එක මෙයයි: \x1b[32m${code}\x1b[0m\n`);
                 console.log("ඔබගේ WhatsApp -> Linked Devices -> Link with phone number වෙත ගොස් මෙම කේතය ඇතුළත් කරන්න.");
             } catch (err) {
-                console.error("Pairing Code ලබා ගැනීමටහේතුවක් නිසා අසමත් විය:", err);
+                console.error("Pairing Code ලබා ගැනීමේ දෝෂයක්:", err);
             }
         }, 4000);
     }
@@ -48,7 +45,6 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('සම්බන්ධතාවය බිඳ වැටුණි. නැවත සම්බන්ධ වෙමින් පවතී...', shouldReconnect);
             if (shouldReconnect) {
                 connectToWhatsApp();
             }
@@ -59,7 +55,6 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // ගෘප් එකෙන් හෝ වෙනත් අයගෙන් එන පණිවිඩ පරීක්ෂා කිරීම
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         
@@ -74,19 +69,12 @@ async function connectToWhatsApp() {
             const remoteJid = msg.key.remoteJid;
             const isGroup = remoteJid.endsWith('@g.us');
 
-            // කෙනෙක් බොට්ව මෙන්ෂන් කළ විට හෝ ගෘප් එකේ යම් ප්‍රශ්නයක් ඇසූ විට (මෙහි ඔබට අවශ්‍ය පරිදි කොන්දේසි වෙනස් කරගත හැක)
-            if (messageContent.startsWith('!ai') || isGroup) {
-                // '!ai' අයින් කර ප්‍රශ්නය පමණක් ලබා ගැනීම
+            if (isGroup || messageContent.startsWith('!ai')) {
                 const query = messageContent.startsWith('!ai') ? messageContent.replace('!ai', '').trim() : messageContent;
-                
                 if (!query) return;
 
                 console.log(`[AI Request] ලැබුණු ප්‍රශ්නය: ${query}`);
-                
-                // Gemini AI වෙතින් පිළිතුර ලබා ගැනීම
                 const replyText = await askGemini(query);
-
-                // WhatsApp වෙත ප්‍රතිචාරය යැවීම
                 await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
             }
         }
